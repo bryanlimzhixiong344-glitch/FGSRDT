@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>佛光燃鼓團助教組 - 雲端管理系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700&display=swap');
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f1f5f9;
+        }
+        .drum-gradient {
+            background: linear-gradient(135deg, #b91c1c 0%, #7f1d1d 100%);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-8">
+    <div class="max-w-5xl mx-auto">
+        <!-- 標題區域 -->
+        <header class="drum-gradient text-white p-6 rounded-2xl shadow-lg mb-8 flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold italic">佛光燃鼓團助教組 🥁</h1>
+                <p class="text-sm opacity-90">雲端同步管理系統（每堂固定 RM 20）</p>
+            </div>
+            <div id="connection-status" class="text-xs bg-black/20 px-3 py-1 rounded-full border border-white/20">
+                🟡 正在初始化...
+            </div>
+        </header>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- 控制面板 -->
+            <div class="lg:col-span-1 space-y-6">
+                <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-lg font-bold mb-4 flex items-center">
+                        <span class="mr-2">📝</span> 助教打卡
+                    </h2>
+                    
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">助教姓名</label>
+                            <input type="text" id="assistant-name" placeholder="請輸入姓名" 
+                                class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none">
+                        </div>
+                        
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">課程類別</label>
+                            <select id="course-type" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-red-500 outline-none">
+                                <option value="週二太鼓">週二太鼓</option>
+                                <option value="週五節令鼓">週五節令鼓</option>
+                                <option value="週日節令鼓">週日節令鼓</option>
+                            </select>
+                        </div>
+
+                        <div class="flex gap-2 pt-2">
+                            <button id="btn-checkin" onclick="handleCheckIn()" 
+                                class="flex-1 bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg transition-all shadow-md active:scale-95 disabled:opacity-50">
+                                開始教學
+                            </button>
+                            <button id="btn-checkout" onclick="handleCheckOut()" 
+                                class="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold py-3 rounded-lg transition-all shadow-md active:scale-95 disabled:opacity-50">
+                                結束教學
+                            </button>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- 結算規則 -->
+                <section class="bg-slate-800 text-slate-300 p-5 rounded-2xl">
+                    <h3 class="font-bold text-white mb-3 flex items-center">
+                        <span class="mr-2">💰</span> 雲端結算規則
+                    </h3>
+                    <ul class="space-y-2 text-sm opacity-90">
+                        <li class="flex justify-between"><span>單堂津貼：</span><span class="text-white font-bold">RM 20</span></li>
+                        <li class="flex justify-between"><span>結算週期：</span><span class="text-yellow-400 font-bold">每 4 堂課一次</span></li>
+                        <li class="flex justify-between"><span>週期總額：</span><span class="text-white">RM 80</span></li>
+                        <li class="pt-2 border-t border-slate-700 text-[11px] italic text-slate-400">資料將即時同步至雲端，供教練查看。</li>
+                    </ul>
+                </section>
+            </div>
+
+            <!-- 資料列表 -->
+            <div class="lg:col-span-2 space-y-6">
+                <div id="active-container" class="hidden">
+                    <h3 class="text-sm font-bold text-gray-500 mb-2 px-2 uppercase tracking-wider">正在教學中</h3>
+                    <div id="active-list" class="grid gap-3"></div>
+                </div>
+
+                <section class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 min-h-[400px]">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-lg font-bold">📋 全團課時紀錄</h2>
+                        <div id="loading-spinner" class="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+                    </div>
+
+                    <div id="records-container" class="space-y-8">
+                        <!-- 雲端資料 -->
+                    </div>
+
+                    <div id="empty-state" class="hidden py-20 text-center text-gray-400 italic">
+                        尚無任何雲端紀錄
+                    </div>
+                </section>
+            </div>
+        </div>
+    </div>
+
+    <!-- 訊息提示 -->
+    <div id="toast" class="fixed bottom-10 left-1/2 -translate-x-1/2 bg-gray-900 text-white px-6 py-3 rounded-full shadow-2xl opacity-0 transition-opacity duration-300 pointer-events-none z-50 text-sm"></div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, query, deleteDoc, doc, setDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        // --- ⚠️ 重要：請在此處貼上 Firebase Config ---
+        const firebaseConfig = {
+            apiKey: "",
+            authDomain: "",
+            projectId: "",
+            storageBucket: "",
+            messagingSenderId: "",
+            appId: ""
+        };
+        // ------------------------------------------
+
+        // 初始化變數
+        let db, auth, user;
+        const appId = "fgs-drum-v1";
+        const FLAT_RATE = 20;
+
+        // 初始化 Firebase 功能
+        async function initFirebase() {
+            try {
+                if (!firebaseConfig.apiKey) {
+                    document.getElementById('connection-status').textContent = "🔴 尚未配置 Config";
+                    document.getElementById('loading-spinner').classList.add('hidden');
+                    return;
+                }
+
+                const app = initializeApp(firebaseConfig);
+                auth = getAuth(app);
+                db = getFirestore(app);
+
+                // 強制執行匿名登入以確保連線權限
+                await signInAnonymously(auth);
+                
+                onAuthStateChanged(auth, (u) => {
+                    if (u) {
+                        user = u;
+                        document.getElementById('connection-status').textContent = "🟢 雲端已連線";
+                        startListeners();
+                    } else {
+                        document.getElementById('connection-status').textContent = "🟡 等待驗證...";
+                    }
+                });
+            } catch (error) {
+                console.error("Firebase Init Error:", error);
+                document.getElementById('connection-status').textContent = "🔴 連線錯誤: " + error.code;
+            }
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.textContent = msg;
+            toast.classList.replace('opacity-0', 'opacity-100');
+            setTimeout(() => toast.classList.replace('opacity-100', 'opacity-0'), 3000);
+        }
+
+        // 打卡開始
+        window.handleCheckIn = async () => {
+            if (!user) return showToast("⚠️ 尚未連線到伺服器");
+            const name = document.getElementById('assistant-name').value.trim();
+            const course = document.getElementById('course-type').value;
+            if (!name) return showToast("⚠️ 請輸入姓名");
+            
+            try {
+                await setDoc(doc(db, "artifacts", appId, "public", "data", "active", name), {
+                    name, 
+                    course, 
+                    startTime: new Date().toISOString(),
+                    uid: user.uid
+                });
+                showToast(`✅ ${name} 開始教學`);
+            } catch (e) {
+                console.error(e);
+                showToast("❌ 寫入失敗: " + e.message);
+            }
+        };
+
+        // 打卡結束
+        window.handleCheckOut = async () => {
+            if (!user) return showToast("⚠️ 尚未連線到伺服器");
+            const name = document.getElementById('assistant-name').value.trim();
+            if (!name) return showToast("⚠️ 請輸入姓名");
+
+            try {
+                const activeRef = collection(db, "artifacts", appId, "public", "data", "active");
+                const snap = await getDocs(activeRef);
+                const activeDoc = snap.docs.find(d => d.id === name);
+
+                if (!activeDoc) return showToast("⚠️ 找不到您的開始紀錄");
+                const activeData = activeDoc.data();
+
+                const endTime = new Date();
+                const startTime = new Date(activeData.startTime);
+
+                await addDoc(collection(db, "artifacts", appId, "public", "data", "records"), {
+                    name,
+                    course: activeData.course,
+                    date: endTime.toLocaleDateString('zh-HK'),
+                    start: startTime.toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' }),
+                    end: endTime.toLocaleTimeString('zh-HK', { hour: '2-digit', minute: '2-digit' }),
+                    allowance: FLAT_RATE,
+                    timestamp: endTime.getTime(),
+                    createdBy: user.uid
+                });
+
+                await deleteDoc(doc(db, "artifacts", appId, "public", "data", "active", name));
+                showToast(`🎉 辛苦了！紀錄已同步`);
+            } catch (e) {
+                console.error(e);
+                showToast("❌ 結束失敗: " + e.message);
+            }
+        };
+
+        // 啟動雲端監聽器
+        function startListeners() {
+            // 監聽進行中
+            onSnapshot(collection(db, "artifacts", appId, "public", "data", "active"), (snapshot) => {
+                const container = document.getElementById('active-container');
+                const list = document.getElementById('active-list');
+                if (snapshot.empty) { container.classList.add('hidden'); return; }
+                container.classList.remove('hidden');
+                list.innerHTML = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    return `
+                        <div class="bg-green-50 border border-green-200 p-4 rounded-xl flex justify-between items-center shadow-sm">
+                            <div>
+                                <div class="font-bold text-green-800">${data.name}</div>
+                                <div class="text-xs text-green-600">${data.course} · 教學中</div>
+                            </div>
+                            <div class="text-[10px] bg-green-200 text-green-800 px-2 py-1 rounded">
+                                START: ${new Date(data.startTime).toLocaleTimeString('zh-HK', {hour:'2-digit', minute:'2-digit'})}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }, (err) => console.error("Active Listen Error:", err));
+
+            // 監聽歷史紀錄
+            onSnapshot(collection(db, "artifacts", appId, "public", "data", "records"), (snapshot) => {
+                document.getElementById('loading-spinner').classList.add('hidden');
+                const container = document.getElementById('records-container');
+                const emptyState = document.getElementById('empty-state');
+                
+                if (snapshot.empty) { emptyState.classList.remove('hidden'); container.innerHTML = ''; return; }
+                emptyState.classList.add('hidden');
+
+                const all = snapshot.docs.map(d => d.data()).sort((a, b) => a.timestamp - b.timestamp);
+                const grouped = all.reduce((acc, rec) => { 
+                    if (!acc[rec.name]) acc[rec.name] = []; 
+                    acc[rec.name].push(rec); 
+                    return acc; 
+                }, {});
+
+                container.innerHTML = Object.keys(grouped).map(name => {
+                    let count = 0;
+                    const rows = grouped[name].map(rec => {
+                        count++;
+                        const isSet = count % 4 === 0;
+                        return `
+                            <tr class="${isSet ? 'bg-red-50 font-bold' : ''} border-b border-gray-50">
+                                <td class="py-3 px-2 text-[11px]">第 ${count} 堂<br><span class="text-gray-400 text-[9px]">${rec.date}</span></td>
+                                <td class="py-3 px-2 text-sm">${rec.course}${isSet ? `<br><span class="bg-red-600 text-white text-[9px] px-1 rounded">結算 RM 80</span>` : ''}</td>
+                                <td class="py-3 px-2 text-right text-sm">RM ${rec.allowance}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                    return `<div class="bg-white border rounded-xl overflow-hidden shadow-sm mb-4">
+                        <div class="bg-slate-50 px-4 py-2 border-b font-bold flex justify-between text-slate-800">
+                            <span>${name}</span>
+                            <span class="text-xs font-normal">本期進度: ${count%4}/4</span>
+                        </div>
+                        <table class="w-full text-left">${rows}</table>
+                    </div>`;
+                }).join('');
+            }, (err) => console.error("Records Listen Error:", err));
+        }
+
+        // 執行初始化
+        initFirebase();
+    </script>
+</body>
+</html>
